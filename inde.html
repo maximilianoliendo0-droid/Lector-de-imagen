@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="es-ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📋 Escáner Cronogramas — TRANSPORTE LEO</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:Arial,sans-serif;}
+body{background:#f0f4f8;color:#222;padding:15px;max-width:950px;margin:0 auto;}
+h1{text-align:center;color:#1a56db;margin-bottom:15px;font-size:20px;}
+h2{font-size:15px;color:#2d3748;margin:18px 0 8px;}
+
+.caja-subida{border:3px dashed #cbd5e0;border-radius:12px;padding:30px;text-align:center;margin-bottom:15px;background:#fff;cursor:pointer;transition:border 0.2s;}
+.caja-subida:hover{border-color:#1a56db;background:#f0f7ff;}
+.caja-subida.leyendo{border-color:#f59e0b;background:#fffbeb;}
+.caja-subida.leido{border-color:#10b981;background:#f0fff4;}
+
+.btn{background:#1a56db;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:bold;cursor:pointer;}
+.btn-verde{background:#10b981;}
+.btn-naranja{background:#f59e0b;color:#000;}
+.btn-rojo{background:#dc2626;color:#fff;}
+
+.barra-progreso{width:100%;height:10px;background:#e2e8f0;border-radius:5px;margin:10px 0;display:none;}
+.barra-progreso.visible{display:block;}
+.progreso-interno{height:100%;background:#1a56db;border-radius:5px;width:0%;transition:width 0.3s;}
+.estado{margin:8px 0 15px 0;font-size:14px;color:#4b5563;}
+
+.aviso{background:#e6f7ff;border-left:4px solid #1a56db;padding:12px;border-radius:6px;margin:15px 0;font-size:13px;line-height:1.6;}
+.aviso-importante{background:#fffbeb;border-left:4px solid #f59e0b;padding:12px;border-radius:6px;margin:15px 0;font-size:13px;line-height:1.6;}
+
+.img-previa{max-width:100%;border-radius:8px;margin:12px 0;display:none;}
+.texto-capturado{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin:12px 0;min-height:80px;max-height:150px;overflow-y:auto;font-size:13px;}
+
+.bloque-hora{background:#fff;border-radius:10px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.1);}
+.hora-titulo{font-size:18px;font-weight:bold;color:#1a56db;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #e2e8f0;}
+.entra{background:#d1fae5;border-left:4px solid #10b981;padding:8px 10px;margin:5px 0;border-radius:4px;}
+.sale{background:#fee2e2;border-left:4px solid #ef4444;padding:8px 10px;margin:5px 0;border-radius:4px;}
+.tag-entra{display:inline-block;background:#10b981;color:#fff;font-size:11px;font-weight:bold;padding:2px 7px;border-radius:10px;margin-right:8px;}
+.tag-sale{display:inline-block;background:#ef4444;color:#fff;font-size:11px;font-weight:bold;padding:2px 7px;border-radius:10px;margin-right:8px;}
+
+.planilla{width:100%;border-collapse:collapse;margin-top:15px;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);}
+.planilla th{background:#374151;color:#fff;padding:10px;text-align:left;font-size:14px;}
+.planilla td{border-bottom:1px solid #e2e8f0;padding:10px;font-size:14px;}
+.planilla input{width:100%;border:none;background:transparent;font-size:14px;padding:4px;outline:none;}
+
+.botones{display:flex;gap:10px;margin:15px 0;flex-wrap:wrap;}
+.resumen{background:#f0fff4;border-left:4px solid #10b981;padding:12px;border-radius:6px;margin:15px 0;display:none;}
+.resumen.visible{display:block;}
+</style>
+</head>
+<body>
+
+<h1>📋 Escáner de Cronogramas — TRANSPORTE LEO</h1>
+
+<div class="aviso-importante">
+  ⏰ <strong>Regla:</strong> <code>6-18</code> = Entra 6:00 / Sale 18:00  |  <code>20-7</code> = Entra 20:00 / Sale 7:00<br>
+  📌 <strong>Consejo:</strong> Sacá la foto bien derecha, con buena luz y sin sombras. Si no lee bien, usá la opción de pegar el texto manualmente abajo.
+</div>
+
+<!-- SUBIR IMAGEN -->
+<h2>📷 Opción 1: Subir foto del cronograma</h2>
+<div class="caja-subida" id="caja-archivo" onclick="document.getElementById('archivo').click()">
+  <p style="font-size:16px;margin-bottom:6px;">Tocá acá para elegir la foto</p>
+  <p style="font-size:12px;color:#718096;">Puede tardar unos segundos en leer, paciencia por favor</p>
+  <input type="file" id="archivo" accept="image/*" style="display:none;" onchange="leerImagen(this)">
+</div>
+
+<img id="vista-previa" class="img-previa" alt="Vista previa">
+<div class="barra-progreso" id="barra-carga"><div class="progreso-interno" id="barra-valor"></div></div>
+<p class="estado" id="estado-texto">Esperando que subas la foto...</p>
+
+<!-- PEGAR TEXTO -->
+<h2>✍️ Opción 2: Pegar el texto</h2>
+<textarea id="texto-manual" class="texto-capturado" placeholder="Si la foto no lee bien, copiá el texto del cronograma y pegalo acá..."></textarea>
+<button class="btn btn-verde" style="width:100%;margin:8px 0;" onclick="procesarTexto()">🔍 Generar Conjunto de Horarios</button>
+
+<div class="resumen" id="caja-resumen">
+  <p id="texto-resumen"></p>
+</div>
+
+<!-- RESULTADO -->
+<h2>⏰ Conjunto de Horarios — Entradas y Salidas</h2>
+<div id="conjunto-horarios" style="margin-top:15px;">
+  <div style="text-align:center;color:#718096;padding:30px;background:#fff;border-radius:8px;">
+    Subí la foto o pegá el texto y tocá el botón
+  </div>
+</div>
+
+<!-- PLANILLA -->
+<h2>📊 Planilla Completa</h2>
+<div style="overflow-x:auto;">
+  <table class="planilla">
+    <thead>
+      <tr>
+        <th>Día</th>
+        <th>Nombre</th>
+        <th>Entrada</th>
+        <th>Salida</th>
+        <th>✕</th>
+      </tr>
+    </thead>
+    <tbody id="cuerpo-tabla">
+      <tr><td colspan="5" style="text-align:center;color:#718096;padding:20px;">Sin datos todavía</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="botones">
+  <button class="btn" onclick="agregarFila()">➕ Agregar fila</button>
+  <button class="btn" onclick="copiarTodo()">📋 Copiar todo</button>
+  <button class="btn btn-rojo" onclick="limpiarTodo()">🗑️ Limpiar</button>
+</div>
+
+<script>
+const registros = [];
+const patronHorario = /\b(\d{1,2}(?::\d{2})?)\s*[-–aA]\s*(\d{1,2}(?::\d{2})?)(?:\s*(hs|h|horas))?\b/gi;
+const patronFecha = /\b(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\b/g;
+const patronDia = /\b(lunes|martes|miércoles|jueves|viernes|sábado|domingo|lun|mar|mie|jue|vie|sáb|dom)\b/i;
+const ignorar = ['horario','hora','entrada','salida','turno','mañana','tarde','noche','total','observacion','nombre','empleado','día','fecha','a','de','y','el','la','los','las','del','al','hs','h','','feriado','nuevos equipos'];
+
+// LEER IMAGEN CON OCR
+async function leerImagen(input) {
+  const archivo = input.files[0];
+  if (!archivo) return;
+  
+  const vista = document.getElementById('vista-previa');
+  vista.src = URL.createObjectURL(archivo);
+  vista.style.display = 'block';
+  
+  document.getElementById('caja-archivo').classList.add('leyendo');
+  document.getElementById('barra-carga').classList.add('visible');
+  document.getElementById('estado-texto').textContent = 'Cargando motor de lectura...';
+  
+  try {
+    const resultado = await Tesseract.recognize(archivo, 'spa', {
+      logger: m => {
+        if (m.status === 'loading tesseract core') {
+          document.getElementById('estado-texto').textContent = 'Cargando motor...';
+        } else if (m.status === 'initializing tesseract') {
+          document.getElementById('estado-texto').textContent = 'Inicializando...';
+        } else if (m.status === 'recognizing text') {
+          const porcentaje = Math.round(m.progress * 100);
+          document.getElementById('barra-valor').style.width = porcentaje + '%';
+          document.getElementById('estado-texto').textContent = `Leyendo imagen... ${porcentaje}%`;
+        }
+      }
+    });
+    
+    document.getElementById('texto-manual').value = resultado.data.text;
+    document.getElementById('estado-texto').textContent = '✅ ¡Imagen leída! Revisá el texto y tocá "Generar Conjunto"';
+    document.getElementById('caja-archivo').classList.remove('leyendo');
+    document.getElementById('caja-archivo').classList.add('leido');
+    
+  } catch (err) {
+    document.getElementById('estado-texto').textContent = '❌ Error: ' + err.message + '. Usá la opción de pegar texto.';
+    document.getElementById('caja-archivo').classList.remove('leyendo');
+  }
+}
+
+// PROCESAR TEXTO
+function procesarTexto() {
+  const texto = document.getElementById('texto-manual').value;
+  if (!texto.trim()) {
+    alert('Pegá el texto primero');
+    return;
+  }
+  
+  registros.length = 0;
+  const lineas = texto.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  let ultimaFecha = '';
+  let ultimaLinea = '';
+  
+  lineas.forEach(linea => {
+    const matchFecha = linea.match(patronFecha);
+    const matchDia = linea.match(patronDia);
+    let fecha = matchFecha ? matchFecha[0] : (matchDia ? matchDia[0].charAt(0).toUpperCase() + matchDia[0].slice(1) : '');
+    if (fecha) ultimaFecha = fecha;
+    
+    patronHorario.lastIndex = 0;
+    const tieneHorario = patronHorario.test(linea);
+    
+    if (tieneHorario) {
+      const partes = patronHorario.exec(linea);
+      const entrada = normalizarHora(partes[1]);
+      const salida = normalizarHora(partes[2]);
+      
+      let nombre = ultimaLinea;
+      const textoLimpio = linea.replace(patronFecha,'').replace(patronDia,'').replace(patronHorario,'').trim();
+      if (textoLimpio && esNombreValido(textoLimpio)) nombre = textoLimpio;
+      nombre = limpiarNombre(nombre);
+      
+      registros.push({ fecha: ultimaFecha, nombre: nombre, entrada: entrada, salida: salida });
+      ultimaLinea = '';
+    } else {
+      const limpia = linea.replace(patronFecha,'').replace(patronDia,'').trim();
+      if (esNombreValido(limpia)) ultimaLinea = limpia;
+    }
+  });
+  
+  if (registros.length === 0) {
+    document.getElementById('conjunto-horarios').innerHTML = '<div style="text-align:center;color:#ef4444;padding:20px;">⚠️ No encontré horarios. Revisá el formato (ej: 7-15hs)</div>';
+    document.getElementById('cuerpo-tabla').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#718096;padding:20px;">Sin datos</td></tr>';
+    return;
+  }
+  
+  agruparYMostrar();
+}
+
+// AGRUPAR POR HORA
+function agruparYMostrar() {
+  const agrupado = {};
+  registros.forEach(r => {
+    if (!agrupado[r.entrada]) agrupado[r.entrada] = { entra: [], sale: [] };
+    agrupado[r.entrada].entra.push(r);
+    if (!agrupado[r.salida]) agrupado[r.salida] = { entra: [], sale: [] };
+    agrupado[r.salida].sale.push(r);
+  });
+  
+  const horasOrdenadas = Object.keys(agrupado).sort((a,b) => a.localeCompare(b));
+  
+  let html = '';
+  horasOrdenadas.forEach(hora => {
+    const dato = agrupado[hora];
+    html += `<div class="bloque-hora">`;
+    html += `<div class="hora-titulo">🕐 ${hora}</div>`;
+    
+    if (dato.entra.length > 0) {
+      html += `<div style="margin-bottom:6px;"><strong>🔵 ENTRAN:</strong></div>`;
+      dato.entra.forEach(p => {
+        html += `<div class="entra"><span class="tag-entra">ENTRA</span> ${p.nombre} ${p.fecha ? ' — ' + p.fecha : ''}</div>`;
+      });
+    }
+    if (dato.sale.length > 0) {
+      html += `<div style="margin:10px 0 6px 0;"><strong>🔴 SALEN:</strong></div>`;
+      dato.sale.forEach(p => {
+        html += `<div class="sale"><span class="tag-sale">SALE</span> ${p.nombre} ${p.fecha ? ' — ' + p.fecha : ''}</div>`;
+      });
+    }
+    html += `</div>`;
+  });
+  
+  document.getElementById('conjunto-horarios').innerHTML = html;
+  llenarPlanilla();
+  
+  document.getElementById('caja-resumen').classList.add('visible');
+  document.getElementById('texto-resumen').innerHTML = `✅ <strong>${registros.length}</strong> registros — <strong>${horasOrdenadas.length}</strong> horarios agrupados.`;
+}
+
+function normalizarHora(h) {
+  if (!h) return '';
+  if (!h.includes(':')) return h.length === 1 ? '0' + h + ':00' : h + ':00';
+  const p = h.split(':');
+  if (p[0].length === 1) p[0] = '0' + p[0];
+  return p.join(':');
+}
+
+function esNombreValido(t) {
+  if (!t || t.length < 2) return false;
+  const b = t.toLowerCase();
+  for (const p of ignorar) if (b === p || b.includes(p)) return false;
+  return true;
+}
+
+function limpiarNombre(t) {
+  if (!t) return '— Sin nombre —';
+  return t.replace(/^[^\p{L}]+/u,'').replace(/[^\p{L}\sáéíóúÁÉÍÓÚñÑ]+$/u,'').trim() || '— Sin nombre —';
+}
+
+function llenarPlanilla() {
+  const cuerpo = document.getElementById('cuerpo-tabla');
+  cuerpo.innerHTML = '';
+  registros.forEach((item, idx) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="text" value="${item.fecha || ''}"></td>
+      <td><input type="text" value="${item.nombre}"></td>
+      <td><input type="text" value="${item.entrada}" style="text-align:center;color:#059669;font-weight:bold;"></td>
+      <td><input type="text" value="${item.salida}" style="text-align:center;color:#dc2626;font-weight:bold;"></td>
+      <td style="text-align:center;"><button style="border:none;background:none;color:red;font-weight:bold;cursor:pointer;" onclick="registros.splice(${idx},1);agruparYMostrar();">✕</button></td>
+    `;
+    cuerpo.appendChild(tr);
+  });
+}
+
+function agregarFila() {
+  const cuerpo = document.getElementById('cuerpo-tabla');
+  if (cuerpo.querySelector('td[colspan]')) cuerpo.innerHTML = '';
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="text" placeholder="Día"></td>
+    <td><input type="text" placeholder="Nombre"></td>
+    <td><input type="text" placeholder="Entrada" style="text-align:center;"></td>
+    <td><input type="text" placeholder="Salida" style="text-align:center;"></td>
+    <td style="text-align:center;"><button style="border:none;background:none;color:red;font-weight:bold;cursor:pointer;" onclick="this.closest('tr').remove()">✕</button></td>
+  `;
+  cuerpo.appendChild(tr);
+}
+
+function copiarTodo() {
+  let texto = '📋 CONJUNTO DE HORARIOS — TRANSPORTE LEO\n';
+  texto += 'Generado: ' + new Date().toLocaleString('es-AR') + '\n\n';
+  texto += 'DÍA\tNOMBRE\tENTRADA\tSALIDA\n';
+  texto += '----------------------------------------\n';
+  
+  const filas = document.querySelectorAll('#cuerpo-tabla tr');
+  filas.forEach(f => {
+    const inp = f.querySelectorAll('input');
+    if (inp[1] && inp[1].value) {
+      texto += `${inp[0].value || '-'}\t${inp[1].value}\t${inp[2].value}\t${inp[3].value}\n`;
+    }
+  });
+  
+  navigator.clipboard.writeText(texto).then(() => {
+    alert('✅ ¡Copiado al portapapeles!');
+  });
+}
+
+function limpiarTodo() {
+  if (confirm('¿Borrar todo?')) {
+    registros.length = 0;
+    document.getElementById('texto-manual').value = '';
+    document.getElementById('vista-previa').style.display = 'none';
+    document.getElementById('barra-carga').classList.remove('visible');
+    document.getElementById('caja-resumen').classList.remove('visible');
+    document.getElementById('conjunto-horarios').innerHTML = '<div style="text-align:center;color:#718096;padding:30px;background:#fff;border
